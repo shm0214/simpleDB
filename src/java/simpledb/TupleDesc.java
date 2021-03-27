@@ -28,7 +28,7 @@ public class TupleDesc implements Serializable {
         /**
          * The name of the field
          */
-        public final String fieldName;
+        public String fieldName;
 
         public TDItem(Type t, String n) {
             this.fieldName = n;
@@ -80,6 +80,19 @@ public class TupleDesc implements Serializable {
         TDList = new ArrayList<>(length);
         for (int i = 0; i < length; i++) {
             TDList.add(new TDItem(typeAr[i], fieldAr[i]));
+        }
+    }
+
+    /**
+     * Create a new TupleDesc with an existed TupleDesc.
+     * For lab1 exercise 6
+     *
+     * @param tupleDesc an existed TupleDesc
+     */
+    public TupleDesc(TupleDesc tupleDesc) {
+        this.TDList = new ArrayList<>();
+        for (TDItem tdItem : tupleDesc.TDList) {
+            TDList.add(new TDItem(tdItem.fieldType, tdItem.fieldName));
         }
     }
 
