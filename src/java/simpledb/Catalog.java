@@ -59,7 +59,8 @@ public class Catalog {
     public void addTable(DbFile file, String name, String pkeyField) {
         Table table = new Table(file, name, pkeyField);
         for (int i = 0; i < tableList.size(); i++) {
-            if (tableList.get(i).name.equals(name)) {
+            boolean flag = (tableList.get(i).name == null && name == null) || tableList.get(i).name.equals(name);
+            if (flag) {
                 tableList.set(i, table);
                 idList.set(i, table.id);
                 return;
