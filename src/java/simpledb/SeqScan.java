@@ -1,5 +1,6 @@
 package simpledb;
 
+import java.util.Iterator;
 import java.util.NoSuchElementException;
 
 /**
@@ -90,8 +91,9 @@ public class SeqScan implements OpIterator {
     public TupleDesc getTupleDesc() {
         TupleDesc tupleDesc = new TupleDesc(Database.getCatalog().getTupleDesc(tableId));
         TupleDesc.TDItem tdItem;
-        while (tupleDesc.iterator().hasNext()) {
-            tdItem = tupleDesc.iterator().next();
+        Iterator<TupleDesc.TDItem> iterator = tupleDesc.iterator();
+        while (iterator.hasNext()) {
+            tdItem = iterator.next();
             tdItem.fieldName = (getAlias() == null ? "null" : getAlias()) + '.' + (tdItem.fieldName == null ? "null" : tdItem.fieldName);
         }
         return tupleDesc;

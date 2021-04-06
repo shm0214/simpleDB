@@ -51,7 +51,7 @@ public class TupleDesc implements Serializable {
 
             @Override
             public boolean hasNext() {
-                return TDList.size() >= position;
+                return TDList.size() > position;
             }
 
             @Override
