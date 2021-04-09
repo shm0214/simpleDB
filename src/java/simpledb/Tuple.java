@@ -2,7 +2,9 @@ package simpledb;
 
 import java.io.Serializable;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Iterator;
+import java.util.Objects;
 
 /**
  * Tuple maintains information about the contents of a tuple. Tuples have a specified schema
@@ -128,4 +130,17 @@ public class Tuple implements Serializable {
     public void resetTupleDesc(TupleDesc td) {
         this.tupleDesc = new TupleDesc(new ArrayList<>());
     }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
+        Tuple tuple = (Tuple) o;
+        return Objects.equals(tupleDesc, tuple.tupleDesc) && Objects.equals(recordId, tuple.recordId) && Arrays.equals(fields, tuple.fields);
+    }
+
 }

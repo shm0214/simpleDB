@@ -1,8 +1,6 @@
 package simpledb;
 
-import java.io.File;
-import java.io.IOException;
-import java.io.RandomAccessFile;
+import java.io.*;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.NoSuchElementException;
@@ -101,18 +99,36 @@ public class HeapFile implements DbFile {
     @Override
     public ArrayList<Page> insertTuple(TransactionId tid, Tuple t)
             throws DbException, IOException, TransactionAbortedException {
-        // some code goes here
-        return null;
-        // not necessary for lab1
+        ArrayList<Page> pageList = new ArrayList<>();
+        for (int i = 0; i < numPages(); i++) {
+            HeapPage page = (HeapPage) Database.getBufferPool().getPage(tid, new HeapPageId(getId(), i), Permissions.READ_WRITE);
+            if (page.getNumEmptySlots() != 0) {
+                page.insertTuple(t);
+                pageList.add(page);
+                return pageList;
+            }
+        }
+        OutputStream out = new FileOutputStream(file, true);
+        out.write(HeapPage.createEmptyPageData());
+        out.flush();
+        out.close();
+        HeapPage page = (HeapPage) Database.getBufferPool().getPage(tid, new HeapPageId(getId(), numPages() - 1), Permissions.READ_WRITE);
+        page.insertTuple(t);
+        pageList.add(page);
+        return pageList;
+
     }
 
     // see DbFile.java for javadocs
     @Override
     public ArrayList<Page> deleteTuple(TransactionId tid, Tuple t) throws DbException,
             TransactionAbortedException {
-        // some code goes here
-        return null;
-        // not necessary for lab1
+        ArrayList<Page> pageList = new ArrayList<>();
+        RecordId recordId = t.getRecordId();
+        HeapPage page = (HeapPage) Database.getBufferPool().getPage(tid, recordId.getPageId(), Permissions.READ_WRITE);
+        page.deleteTuple(t);
+        pageList.add(page);
+        return pageList;
     }
 
     // see DbFile.java for javadocs
