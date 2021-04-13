@@ -9,60 +9,89 @@ import java.io.IOException;
 public class Delete extends Operator {
 
     private static final long serialVersionUID = 1L;
+    private TransactionId transactionId;
+    private OpIterator opIterator;
+    private TupleDesc tupleDesc;
+    private boolean first;
+    private int count;
 
     /**
      * Constructor specifying the transaction that this delete belongs to as
      * well as the child to read from.
-     * 
-     * @param t
-     *            The transaction this delete runs in
-     * @param child
-     *            The child operator from which to read tuples for deletion
+     *
+     * @param t     The transaction this delete runs in
+     * @param child The child operator from which to read tuples for deletion
      */
     public Delete(TransactionId t, OpIterator child) {
-        // some code goes here
+        this.transactionId = t;
+        this.opIterator = child;
+        this.tupleDesc = new TupleDesc(new Type[]{Type.INT_TYPE}, new String[]{"count"});
+        this.count = 0;
+        this.first = true;
     }
 
+    @Override
     public TupleDesc getTupleDesc() {
-        // some code goes here
-        return null;
+        return tupleDesc;
     }
 
+    @Override
     public void open() throws DbException, TransactionAbortedException {
-        // some code goes here
+        opIterator.open();
+        super.open();
+        count = 0;
     }
 
+    @Override
     public void close() {
-        // some code goes here
+        super.close();
+        opIterator.close();
     }
 
+    @Override
     public void rewind() throws DbException, TransactionAbortedException {
-        // some code goes here
+        opIterator.rewind();
+        count = 0;
     }
 
     /**
      * Deletes tuples as they are read from the child operator. Deletes are
      * processed via the buffer pool (which can be accessed via the
      * Database.getBufferPool() method.
-     * 
+     *
      * @return A 1-field tuple containing the number of deleted records.
      * @see Database#getBufferPool
      * @see BufferPool#deleteTuple
      */
+    @Override
     protected Tuple fetchNext() throws TransactionAbortedException, DbException {
-        // some code goes here
-        return null;
+        // 这里明明没有这个要求，但是不写就又通不过测试
+        if (!first) {
+            return null;
+        }
+        first = false;
+        while (this.opIterator.hasNext()) {
+            Tuple tuple = opIterator.next();
+            try {
+                Database.getBufferPool().deleteTuple(transactionId, tuple);
+                count++;
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+        Tuple tuple = new Tuple(tupleDesc);
+        tuple.setField(0, new IntField(count));
+        return tuple;
     }
 
     @Override
     public OpIterator[] getChildren() {
-        // some code goes here
-        return null;
+        return new OpIterator[]{opIterator};
     }
 
     @Override
     public void setChildren(OpIterator[] children) {
-        // some code goes here
+        opIterator = children[0];
     }
 
 }
