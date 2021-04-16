@@ -13,6 +13,7 @@ public class Join extends Operator {
     private OpIterator child1, child2;
     private Tuple left, right;
     private boolean changeLeft = true;
+    private TupleDesc tupleDesc;
 
     /**
      * Constructor. Accepts two children to join and the predicate to join them
@@ -54,10 +55,12 @@ public class Join extends Operator {
      */
     @Override
     public TupleDesc getTupleDesc() {
-        TupleDesc t1 = child1.getTupleDesc();
-        TupleDesc t2 = child2.getTupleDesc();
-        return TupleDesc.merge(t1, t2);
-//        return TupleDesc.merge(child1.getTupleDesc(), child2.getTupleDesc());
+        if (tupleDesc == null) {
+            TupleDesc t1 = child1.getTupleDesc();
+            TupleDesc t2 = child2.getTupleDesc();
+            tupleDesc = TupleDesc.merge(t1, t2);
+        }
+        return tupleDesc;
     }
 
     @Override
@@ -131,8 +134,7 @@ public class Join extends Operator {
     }
 
     private Tuple mergeTuples(Tuple left, Tuple right) {
-        TupleDesc tupleDesc = getTupleDesc();
-        Tuple tuple = new Tuple(tupleDesc);
+        Tuple tuple = new Tuple(getTupleDesc());
         int index = 0;
         Iterator<Field> iterator = left.fields();
         while (iterator.hasNext()) {
