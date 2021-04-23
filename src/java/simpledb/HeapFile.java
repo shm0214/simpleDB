@@ -87,7 +87,7 @@ public class HeapFile implements DbFile {
         if (page.getId().getPageNumber() > numPages()) {
             throw new IllegalArgumentException();
         }
-        RandomAccessFile randomAccessFile = new RandomAccessFile(getFile(), "r");
+        RandomAccessFile randomAccessFile = new RandomAccessFile(getFile(), "rw");
         int pageSize = BufferPool.getPageSize();
         int position = page.getId().getPageNumber() * pageSize;
         randomAccessFile.seek(position);
