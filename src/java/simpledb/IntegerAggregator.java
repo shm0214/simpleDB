@@ -168,8 +168,8 @@ public class IntegerAggregator implements Aggregator {
 
         @Override
         public Tuple next() throws DbException, TransactionAbortedException, NoSuchElementException {
+            Map.Entry<Field, Integer> entry = iterator.next();
             if (operator != Op.AVG) {
-                Map.Entry<Field, Integer> entry = iterator.next();
                 Field field = entry.getKey();
                 Tuple tuple = new Tuple(this.tupleDesc);
                 if (field == null) {
@@ -180,7 +180,6 @@ public class IntegerAggregator implements Aggregator {
                 }
                 return tuple;
             } else {
-                Map.Entry<Field, Integer> entry = iterator.next();
                 Map.Entry<Field, Integer> entry1 = iterator1.next();
                 Field field = entry.getKey();
                 Tuple tuple = new Tuple(this.tupleDesc);
