@@ -2,8 +2,9 @@ package simpledb;
 
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.HashMap;
+import java.util.List;
 import java.util.Random;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * BufferPool manages the reading and writing of pages into memory from
@@ -33,7 +34,113 @@ public class BufferPool {
 
     private int maxPageNumber = DEFAULT_PAGES;
 
-    private HashMap<PageId, Page> pageHashMap;
+    private final ConcurrentHashMap<PageId, Page> pageConcurrentHashMap;
+
+    private final LockManager lockManager;
+
+    private class Lock {
+        TransactionId transactionId;
+        int type; // 0 shared 1 exclusive
+
+        public Lock(TransactionId tid, int type) {
+            this.transactionId = tid;
+            this.type = type;
+        }
+    }
+
+    private class LockManager {
+        private ConcurrentHashMap<PageId, List<Lock>> lockHashMap;
+
+        public LockManager() {
+            this.lockHashMap = new ConcurrentHashMap<PageId, List<Lock>>();
+        }
+
+        public synchronized boolean lock(TransactionId tid, PageId pid, int type) {
+            List<Lock> locks = lockHashMap.get(pid);
+            // 如果还没有锁
+            if (locks == null) {
+                locks = new ArrayList<>();
+                Lock lock = new Lock(tid, type);
+                locks.add(lock);
+                lockHashMap.put(pid, locks);
+                return true;
+            }
+            for (Lock lock : locks) {
+                if (lock.transactionId.equals(tid)) {
+                    // 已经有同级/更高级锁
+                    if (lock.type == type || lock.type == 1) {
+                        return true;
+                    }
+                    // 独占sharedLock，升级为exclusiveLock
+                    if (locks.size() == 1) {
+                        lock.type = 1;
+                        return true;
+                    }
+                    // 本来是sharedLock想提升为exclusiveLock，但还有其他tx有sharedLock
+                    try {
+                        wait();
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
+                    return false;
+                }
+            }
+            // 没锁并且已有其他tx的exclusiveLock
+            if (locks.get(0).type == 1) {
+                assert locks.size() == 1;
+                try {
+                    wait();
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+                return false;
+            }
+            // 没有exclusiveLock并且只想加一个sharedLock
+            if (type == 0) {
+                Lock lock = new Lock(tid, type);
+                locks.add(lock);
+                lockHashMap.put(pid, locks);
+                return true;
+            }
+            // 想加exclusiveLock但有其他tx的sharedLock
+            try {
+                wait();
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+            return false;
+        }
+
+        public synchronized boolean unlock(TransactionId tid, PageId pid) throws DbException {
+            List<Lock> locks = lockHashMap.get(pid);
+            if (locks == null || locks.size() == 0) {
+                throw new DbException("empty lock map");
+            }
+            for (Lock lock : locks) {
+                if (lock.transactionId.equals(tid)) {
+                    locks.remove(lock);
+                    if (locks.size() == 0) {
+                        lockHashMap.remove(pid);
+                    }
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        public synchronized boolean holdLock(TransactionId tid, PageId pid) {
+            List<Lock> locks = lockHashMap.get(pid);
+            if (locks == null || locks.size() == 0) {
+                return false;
+            }
+            for (Lock lock : locks) {
+                if (lock.transactionId == tid) {
+                    return true;
+                }
+            }
+            return false;
+        }
+    }
 
     /**
      * Creates a BufferPool that caches up to numPages pages.
@@ -42,7 +149,8 @@ public class BufferPool {
      */
     public BufferPool(int numPages) {
         this.maxPageNumber = numPages;
-        pageHashMap = new HashMap<>(numPages);
+        pageConcurrentHashMap = new ConcurrentHashMap<>(numPages);
+        lockManager = new LockManager();
     }
 
     public static int getPageSize() {
@@ -76,13 +184,15 @@ public class BufferPool {
      */
     public Page getPage(TransactionId tid, PageId pid, Permissions perm)
             throws TransactionAbortedException, DbException {
-        if (pageHashMap.containsKey(pid)) {
-            return pageHashMap.get(pid);
+        int type = perm == Permissions.READ_ONLY ? 0 : 1;
+        lockManager.lock(tid, pid, type);
+        if (pageConcurrentHashMap.containsKey(pid)) {
+            return pageConcurrentHashMap.get(pid);
         } else {
             DbFile file = Database.getCatalog().getDatabaseFile(pid.getTableId());
             Page page = file.readPage(pid);
-            if (pageHashMap.size() < maxPageNumber) {
-                pageHashMap.put(pid, page);
+            if (pageConcurrentHashMap.size() < maxPageNumber) {
+                pageConcurrentHashMap.put(pid, page);
             } else {
 //                throw new DbException("no space for new page!");
                 evictPage();
@@ -101,8 +211,11 @@ public class BufferPool {
      * @param pid the ID of the page to unlock
      */
     public void releasePage(TransactionId tid, PageId pid) {
-        // some code goes here
-        // not necessary for lab1|lab2
+        try {
+            lockManager.unlock(tid, pid);
+        } catch (DbException e) {
+            e.printStackTrace();
+        }
     }
 
     /**
@@ -119,9 +232,7 @@ public class BufferPool {
      * Return true if the specified transaction has a lock on the specified page
      */
     public boolean holdsLock(TransactionId tid, PageId p) {
-        // some code goes here
-        // not necessary for lab1|lab2
-        return false;
+        return lockManager.holdLock(tid, p);
     }
 
     /**
@@ -157,7 +268,7 @@ public class BufferPool {
         ArrayList<Page> dirtyPages = Database.getCatalog().getDatabaseFile(tableId).insertTuple(tid, t);
         for (Page page : dirtyPages) {
             page.markDirty(true, tid);
-            pageHashMap.put(page.getId(), page);
+            pageConcurrentHashMap.put(page.getId(), page);
         }
     }
 
@@ -179,7 +290,7 @@ public class BufferPool {
         ArrayList<Page> dirtyPages = Database.getCatalog().getDatabaseFile(t.getRecordId().getPageId().getTableId()).deleteTuple(tid, t);
         for (Page page : dirtyPages) {
             page.markDirty(true, tid);
-            pageHashMap.put(page.getId(), page);
+            pageConcurrentHashMap.put(page.getId(), page);
         }
     }
 
@@ -189,7 +300,7 @@ public class BufferPool {
      * break simpledb if running in NO STEAL mode.
      */
     public synchronized void flushAllPages() throws IOException {
-        for (Page page : pageHashMap.values()) {
+        for (Page page : pageConcurrentHashMap.values()) {
             flushPage(page.getId());
         }
 
@@ -205,7 +316,7 @@ public class BufferPool {
      * are removed from the cache so they can be reused safely
      */
     public synchronized void discardPage(PageId pid) {
-        pageHashMap.remove(pid);
+        pageConcurrentHashMap.remove(pid);
     }
 
     /**
@@ -214,7 +325,7 @@ public class BufferPool {
      * @param pid an ID indicating the page to flush
      */
     private synchronized void flushPage(PageId pid) throws IOException {
-        Page page = pageHashMap.get(pid);
+        Page page = pageConcurrentHashMap.get(pid);
         if (page.isDirty() != null) {
             Database.getCatalog().getDatabaseFile(pid.getTableId()).writePage(page);
             page.markDirty(false, null);
@@ -234,7 +345,7 @@ public class BufferPool {
      * Flushes the page to disk to ensure dirty pages are updated on disk.
      */
     private synchronized void evictPage() throws DbException {
-        PageId[] pageIds = pageHashMap.keySet().toArray(new PageId[0]);
+        PageId[] pageIds = pageConcurrentHashMap.keySet().toArray(new PageId[0]);
         Random random = new Random();
         PageId pageId = pageIds[random.nextInt(pageIds.length)];
         try {
