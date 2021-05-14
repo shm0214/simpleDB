@@ -78,7 +78,7 @@ public class BufferPool {
                     }
                     // 本来是sharedLock想提升为exclusiveLock，但还有其他tx有sharedLock
                     try {
-                        wait();
+                        wait(200);
                     } catch (InterruptedException e) {
                         e.printStackTrace();
                     }
@@ -89,7 +89,7 @@ public class BufferPool {
             if (locks.get(0).type == 1) {
                 assert locks.size() == 1;
                 try {
-                    wait();
+                    wait(200);
                 } catch (InterruptedException e) {
                     e.printStackTrace();
                 }
@@ -104,7 +104,7 @@ public class BufferPool {
             }
             // 想加exclusiveLock但有其他tx的sharedLock
             try {
-                wait();
+                wait(200);
             } catch (InterruptedException e) {
                 e.printStackTrace();
             }
@@ -224,8 +224,7 @@ public class BufferPool {
      * @param tid the ID of the transaction requesting the unlock
      */
     public void transactionComplete(TransactionId tid) throws IOException {
-        // some code goes here
-        // not necessary for lab1|lab2
+        transactionComplete(tid, true);
     }
 
     /**
@@ -244,8 +243,26 @@ public class BufferPool {
      */
     public void transactionComplete(TransactionId tid, boolean commit)
             throws IOException {
-        // some code goes here
-        // not necessary for lab1|lab2
+        if (commit) {
+            flushPages(tid);
+        } else {
+            restorePages(tid);
+        }
+        for (PageId pageId : pageConcurrentHashMap.keySet()) {
+            if (holdsLock(tid, pageId)) {
+                releasePage(tid, pageId);
+            }
+        }
+    }
+
+    public synchronized void restorePages(TransactionId tid) {
+        for (PageId pageId : pageConcurrentHashMap.keySet()) {
+            Page page = pageConcurrentHashMap.get(pageId);
+            if (page.isDirty() == tid) {
+                DbFile f = Database.getCatalog().getDatabaseFile(page.getId().getTableId());
+                pageConcurrentHashMap.put(pageId, f.readPage(page.getId()));
+            }
+        }
     }
 
     /**
@@ -336,8 +353,12 @@ public class BufferPool {
      * Write all pages of the specified transaction to disk.
      */
     public synchronized void flushPages(TransactionId tid) throws IOException {
-        // some code goes here
-        // not necessary for lab1|lab2
+        for (PageId pageId : pageConcurrentHashMap.keySet()) {
+            Page page = pageConcurrentHashMap.get(pageId);
+            if (page.isDirty() == tid) {
+                flushPage(pageId);
+            }
+        }
     }
 
     /**
@@ -347,13 +368,20 @@ public class BufferPool {
     private synchronized void evictPage() throws DbException {
         PageId[] pageIds = pageConcurrentHashMap.keySet().toArray(new PageId[0]);
         Random random = new Random();
-        PageId pageId = pageIds[random.nextInt(pageIds.length)];
-        try {
-            flushPage(pageId);
-        } catch (IOException e) {
-            e.printStackTrace();
+        PageId pageId = null;
+        do {
+            pageId = pageIds[random.nextInt(pageIds.length)];
+        } while (pageConcurrentHashMap.get(pageId).isDirty() != null);
+        if (pageId == null) {
+            throw new DbException("All pages are dirty!");
         }
-        discardPage(pageId);
+        // 由于换出的不是dirty的，也就没必要flush了
+//        try {
+//            flushPage(pageId);
+//        } catch (IOException e) {
+//            e.printStackTrace();
+//        }
+//        discardPage(pageId);
     }
 
 }
