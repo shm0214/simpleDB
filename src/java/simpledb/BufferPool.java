@@ -3,7 +3,6 @@ package simpledb;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Random;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -77,22 +76,12 @@ public class BufferPool {
                         return true;
                     }
                     // 本来是sharedLock想提升为exclusiveLock，但还有其他tx有sharedLock
-                    try {
-                        wait(200);
-                    } catch (InterruptedException e) {
-                        e.printStackTrace();
-                    }
                     return false;
                 }
             }
             // 没锁并且已有其他tx的exclusiveLock
             if (locks.get(0).type == 1) {
                 assert locks.size() == 1;
-                try {
-                    wait(200);
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                }
                 return false;
             }
             // 没有exclusiveLock并且只想加一个sharedLock
@@ -103,11 +92,6 @@ public class BufferPool {
                 return true;
             }
             // 想加exclusiveLock但有其他tx的sharedLock
-            try {
-                wait(200);
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-            }
             return false;
         }
 
@@ -185,7 +169,20 @@ public class BufferPool {
     public Page getPage(TransactionId tid, PageId pid, Permissions perm)
             throws TransactionAbortedException, DbException {
         int type = perm == Permissions.READ_ONLY ? 0 : 1;
-        lockManager.lock(tid, pid, type);
+        boolean isLocked = lockManager.lock(tid, pid, type);
+        long start = System.currentTimeMillis();
+        while (!isLocked) {
+            long end = System.currentTimeMillis();
+            if (end - start > 300) {
+                throw new TransactionAbortedException();
+            }
+            try {
+                Thread.sleep(20);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+            isLocked = lockManager.lock(tid, pid, type);
+        }
         if (pageConcurrentHashMap.containsKey(pid)) {
             return pageConcurrentHashMap.get(pid);
         } else {
@@ -366,14 +363,30 @@ public class BufferPool {
      * Flushes the page to disk to ensure dirty pages are updated on disk.
      */
     private synchronized void evictPage() throws DbException {
+        /*
         PageId[] pageIds = pageConcurrentHashMap.keySet().toArray(new PageId[0]);
         Random random = new Random();
         PageId pageId = null;
         do {
             pageId = pageIds[random.nextInt(pageIds.length)];
         } while (pageConcurrentHashMap.get(pageId).isDirty() != null);
-        if (pageId == null) {
+        if (pageConcurrentHashMap.get(pageId).isDirty() != null) {
             throw new DbException("All pages are dirty!");
+        }
+        */
+        // 随机的效果太差了，换成从头遍历的
+        PageId pageId = null;
+        Page page = null;
+        for (PageId pageid : pageConcurrentHashMap.keySet()) {
+            page = pageConcurrentHashMap.get(pageid);
+            pageId = pageid;
+            if (page.isDirty() == null) {
+                break;
+            }
+        }
+        assert page != null;
+        if (page.isDirty() != null) {
+            throw new DbException("All pages are dirty");
         }
         // 由于换出的不是dirty的，也就没必要flush了
 //        try {
@@ -381,7 +394,7 @@ public class BufferPool {
 //        } catch (IOException e) {
 //            e.printStackTrace();
 //        }
-//        discardPage(pageId);
+        discardPage(pageId);
     }
 
 }
